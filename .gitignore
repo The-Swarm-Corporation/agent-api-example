@@ -11,9 +11,12 @@ dataframe/
 agent_workspace
 static/generated
 runs
+conversations
 Financial-Analysis-Agent_state.json
 artifacts_five
 encryption
+states
+logs
 errors
 chroma
 agent_workspace
