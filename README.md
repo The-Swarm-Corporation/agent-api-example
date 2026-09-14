@@ -4,21 +4,24 @@
 
 [![Swarms Framework](https://img.shields.io/badge/Built%20with-Swarms-blue)](https://github.com/kyegomez/swarms)
 
-A minimal, production-ready template for serving a [Swarms](https://github.com/kyegomez/swarms) agent over HTTP with FastAPI. Fork it, change the agent, deploy the container.
+AgentAPI is a reference implementation for serving a [Swarms](https://github.com/kyegomez/swarms) agent as an HTTP service. It provides a minimal FastAPI application, a container image, and the configuration required to deploy a single agent to production.
 
-## What's inside
+## Contents
 
-```
-.
-├── api/
-│   ├── api.py            # FastAPI app: one Agent, two endpoints
-│   └── requirements.txt  # swarms, fastapi, uvicorn
-├── Dockerfile            # python:3.12-slim image, serves on port 8080
-├── .env.example          # environment variables to copy into .env
-└── tests.py              # smoke-test script (see note below)
-```
+- [Overview](#overview)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Service](#running-the-service)
+- [API Reference](#api-reference)
+- [Customizing the Agent](#customizing-the-agent)
+- [Deployment Considerations](#deployment-considerations)
+- [Testing](#testing)
+- [License](#license)
 
-The whole API is `api/api.py`:
+## Overview
+
+The service exposes one agent, constructed once at application startup, behind two endpoints: a health check and a task execution endpoint. The complete application is contained in `api/api.py`.
 
 ```python
 from fastapi import FastAPI
@@ -43,64 +46,112 @@ def run(body: dict):
     return {"output": output}
 ```
 
-## Endpoints
+Repository layout:
 
-| Method | Path      | Body                | Response                              |
-|--------|-----------|---------------------|---------------------------------------|
-| GET    | `/health` | none                | `{"status": "ok"}`                    |
-| POST   | `/run`    | `{"task": "<str>"}` | `{"output": "<agent response>"}`      |
+| Path                   | Description                                        |
+|------------------------|----------------------------------------------------|
+| `api/api.py`           | FastAPI application and agent definition           |
+| `api/requirements.txt` | Python dependencies (`swarms`, `fastapi`, `uvicorn`) |
+| `Dockerfile`           | Container image based on `python:3.12-slim`        |
+| `.env.example`         | Template for required environment variables        |
+| `tests.py`             | Smoke-test script (see [Testing](#testing))        |
 
-If `task` is missing from the body, `/run` returns `{"error": "Missing 'task' in request body"}`.
+## Requirements
 
-Interactive docs are served by FastAPI at `/docs` (Swagger) and `/redoc`.
+- Python 3.12 or later
+- An Anthropic API key for the default model (`claude-sonnet-4-5`)
+- Docker (optional, for containerized deployment)
 
-## Quick start
+## Installation
 
-### 1. Configure environment
+```bash
+git clone <repository-url>
+cd AgentAPIProduction
+pip install -r api/requirements.txt
+```
+
+## Configuration
+
+Configuration is supplied through environment variables. Copy the template and populate it:
 
 ```bash
 cp .env.example .env
 ```
 
-The default agent uses `claude-sonnet-4-5`, so `ANTHROPIC_API_KEY` is required. See `.env.example` for the optional variables.
+| Variable              | Required | Default           | Description                                                    |
+|-----------------------|----------|-------------------|----------------------------------------------------------------|
+| `ANTHROPIC_API_KEY`   | Yes      | none              | API key for the default Claude model                           |
+| `WORKSPACE_DIR`       | No       | `agent_workspace` | Directory where Swarms writes agent state, logs, and artifacts |
+| `SWARMS_TELEMETRY_ON` | No       | `true`            | Set to `false` to disable Swarms telemetry                     |
 
-| Variable              | Required | Purpose                                                        |
-|-----------------------|----------|----------------------------------------------------------------|
-| `ANTHROPIC_API_KEY`   | yes      | Model provider key for the default Claude model                |
-| `WORKSPACE_DIR`       | no       | Where swarms writes agent state and logs (default `agent_workspace`) |
-| `SWARMS_TELEMETRY_ON` | no       | Set to `false` to disable swarms telemetry                     |
+Swarms routes model calls through LiteLLM. If `model_name` in `api/api.py` is changed to a model from another provider, the corresponding provider key (for example `OPENAI_API_KEY` or `GROQ_API_KEY`) must be set instead. Refer to the [LiteLLM provider list](https://docs.litellm.ai/docs/providers) for supported models and their required variables.
 
-If you change `model_name` to another provider (OpenAI, Groq, Gemini, etc.), set that provider's key instead. Swarms routes model calls through LiteLLM, so any [LiteLLM-supported model name](https://docs.litellm.ai/docs/providers) works.
+## Running the Service
 
-### 2. Run locally
+### Local
 
 ```bash
-pip install -r api/requirements.txt
 uvicorn api.api:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-### 3. Run with Docker
+### Docker
 
 ```bash
 docker build -t agent-api .
 docker run --rm -p 8080:8080 --env-file .env agent-api
 ```
 
-The image does not bake in any secrets. Pass them at runtime with `--env-file` or `-e`.
+The image contains no credentials. Secrets must be provided at runtime via `--env-file` or individual `-e` flags.
 
-### 4. Call it
+### Verifying the deployment
 
 ```bash
 curl http://localhost:8080/health
 
 curl -X POST http://localhost:8080/run \
   -H "Content-Type: application/json" \
-  -d '{"task": "Summarize the key ideas behind multi-agent systems in three bullets."}'
+  -d '{"task": "Summarize the key ideas behind multi-agent systems in three bullet points."}'
 ```
 
-## Customizing the agent
+## API Reference
 
-Everything about the agent lives in the `Agent(...)` constructor in `api/api.py`. Common changes:
+Interactive documentation is available at `/docs` (Swagger UI) and `/redoc` once the service is running.
+
+### `GET /health`
+
+Returns the service status. This endpoint does not contact the model provider and is suitable for load balancer health checks.
+
+Response:
+
+```json
+{"status": "ok"}
+```
+
+### `POST /run`
+
+Executes a task with the configured agent and returns the result.
+
+Request body:
+
+```json
+{"task": "string"}
+```
+
+Response:
+
+```json
+{"output": "string"}
+```
+
+If the `task` field is absent, the endpoint returns HTTP 200 with an error payload:
+
+```json
+{"error": "Missing 'task' in request body"}
+```
+
+## Customizing the Agent
+
+All agent behavior is defined by the `Agent(...)` constructor in `api/api.py`. The following example illustrates commonly adjusted parameters:
 
 ```python
 agent = Agent(
@@ -113,20 +164,21 @@ agent = Agent(
 )
 ```
 
-See the [Swarms Agent docs](https://docs.swarms.world/agents/agent-configuration) for the full list of parameters, including tools, memory, and multi-loop reasoning.
+The full parameter reference, including tools, memory, and multi-step reasoning, is documented in the [Swarms Agent configuration guide](https://docs.swarms.world/agents/agent-configuration).
 
-To serve several agents or a swarm, add more endpoints to `api/api.py` and construct the agents at module import time so they are created once per worker, not once per request.
+To serve multiple agents or a swarm, add additional endpoints to `api/api.py`. Construct agents at module import time so that each worker instantiates them once rather than on every request.
 
-## Deployment notes
+## Deployment Considerations
 
-- The container listens on port `8080` and runs a single uvicorn process. Put it behind a load balancer and scale horizontally rather than adding workers, since each worker holds its own agent instance.
-- The agent is created at import time, so a missing API key will surface on the first `/run` call, not at startup. Hit `/health` and then `/run` once as part of your deploy check.
-- `WORKSPACE_DIR` is written to inside the container. Mount a volume if you need agent state or logs to persist across restarts.
+- **Process model.** The container runs a single Uvicorn process on port 8080. Scale horizontally behind a load balancer rather than increasing worker count, since each worker holds an independent agent instance.
+- **Startup validation.** The agent is constructed at import time, but a missing or invalid API key is not detected until the first `/run` request. Deployment checks should exercise both `/health` and `/run`.
+- **Persistence.** `WORKSPACE_DIR` is written inside the container. Mount a volume at that path if agent state or logs must survive restarts.
+- **Error handling.** The `/run` endpoint returns HTTP 200 for a missing `task` field. Callers should inspect the response body rather than relying on status codes alone.
 
-## Tests
+## Testing
 
-`tests.py` is a smoke-test script against a running server on `localhost:8080`. It currently targets an older multi-endpoint version of this API (`/v1/agent`, `/v1/agents`, etc.) and needs to be rewritten for the current `/health` and `/run` endpoints before it will pass.
+`tests.py` is a smoke-test script that issues requests against a running server on `localhost:8080`. It currently targets a previous version of this API with a multi-endpoint surface (`/v1/agent`, `/v1/agents`, and related routes) and must be updated for the current `/health` and `/run` endpoints before it will pass.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
