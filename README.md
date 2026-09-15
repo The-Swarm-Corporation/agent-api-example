@@ -52,7 +52,7 @@ Repository layout:
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/The-Swarm-Corporation/agent-api-example.git
 cd AgentAPIProduction
 pip install -r api/requirements.txt
 ```
