@@ -6,19 +6,6 @@
 
 AgentAPI is a reference implementation for serving a [Swarms](https://github.com/kyegomez/swarms) agent as an HTTP service. It provides a minimal FastAPI application, a container image, and the configuration required to deploy a single agent to production.
 
-## Contents
-
-- [Overview](#overview)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Running the Service](#running-the-service)
-- [API Reference](#api-reference)
-- [Customizing the Agent](#customizing-the-agent)
-- [Deployment Considerations](#deployment-considerations)
-- [Testing](#testing)
-- [License](#license)
-
 ## Overview
 
 The service exposes one agent, constructed once at application startup, behind two endpoints: a health check and a task execution endpoint. The complete application is contained in `api/api.py`.
